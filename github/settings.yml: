@@ -1,0 +1,20 @@
+# Repository settings
+repository:
+  name: bbmeccs
+  description: School Employees Credit Cooperative System
+  topics: eccs, banking, cooperative
+  homepage: https://bbm-eccs.vercel.app
+
+# Branch protection
+branches:
+  - name: main
+    protection:
+      required_pull_request_reviews: true
+      required_status_checks: true
+      include_admins: true
+
+# Secrets (will be added manually)
+secrets:
+  - RENDER_API_KEY
+  - VERCEL_TOKEN
+  - DATABASE_URL
