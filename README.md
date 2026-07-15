@@ -23,3 +23,18 @@ A comprehensive banking system for school employees' credit cooperative society.
 
 ## License
 MIT License
+## 🚀 Live Demo
+
+- **API**: [https://bbm-eccs-api.onrender.com](https://bbm-eccs-api.onrender.com)
+- **Health Check**: [https://bbm-eccs-api.onrender.com/health](https://bbm-eccs-api.onrender.com/health)
+
+## 📡 API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/customers` | List all members |
+| POST | `/api/customers` | Create new member |
+| POST | `/api/accounts` | Open account |
+| POST | `/api/transactions/deposit` | Deposit money |
+| POST | `/api/transactions/withdrawal` | Withdraw money |
+| POST | `/api/transactions/transfer` | Transfer funds |
