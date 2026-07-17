@@ -25,8 +25,9 @@
         
         <nav class="tab-navigation" role="tablist">
             <button class="tab-btn active" role="tab" aria-selected="true" data-target="tab-members">👥 Members</button>
-            <button class="tab-btn" role="tab" aria-selected="false" data-target="tab-loans">💰 Loans & Thrift</button>
-            <button class="tab-btn" role="tab" aria-selected="false" data-target="tab-sync">🔄 Sync Queue</button>
+            <button class="tab-btn" role="tab" aria-selected="false" data-target="tab-loans">💰 Loans</button>
+            <button class="tab-btn" role="tab" aria-selected="false" data-target="tab-reports">📊 Reports</button>
+            <button class="tab-btn" role="tab" aria-selected="false" data-target="tab-sync">🔄 Sync</button>
         </nav>
 
         <!-- TAB 1: MEMBER MANAGEMENT -->
@@ -164,7 +165,64 @@
             </div>
         </section>
 
-        <!-- TAB 3: OFFLINE SYNC MONITOR -->
+        <!-- TAB 3: REPORTS & DIVIDEND MANAGEMENT -->
+        <section id="tab-reports" class="tab-content" aria-labelledby="reports-heading">
+            <!-- Part A: Cumulative Analytics Summary Card -->
+            <div class="card">
+                <h2 id="reports-heading">Cooperative Summary</h2>
+                <div class="sync-status-box" style="border: 1px solid var(--primary-color); display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top:0.5rem;">
+                    <div>
+                        <span class="text-muted" style="font-size:0.75rem;">Total Thrift Fund</span>
+                        <p style="font-size: 1.25rem; font-weight: bold; color: var(--primary-color);" id="sum-thrift">₹0</p>
+                    </div>
+                    <div>
+                        <span class="text-muted" style="font-size:0.75rem;">Outstanding Loans</span>
+                        <p style="font-size: 1.25rem; font-weight: bold; color: var(--error-color);" id="sum-loans">₹0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Part B: Dynamic Dividend Calculation Tool -->
+            <div class="card margin-top">
+                <h2>Calculate Dividend Payouts</h2>
+                <p class="text-muted">Simulate and distribute cooperative profit dividends based on members' thrift contributions.</p>
+                <form id="dividend-form" class="responsive-form">
+                    <div class="form-group">
+                        <label for="div-rate">Dividend Rate (%)</label>
+                        <input type="number" id="div-rate" value="6.5" min="0.1" step="0.1" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Process Calculations</button>
+                </form>
+
+                <div id="dividend-results-wrapper" class="hidden margin-top">
+                    <h3>Estimated Dividend Pool</h3>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <th>Member ID</th>
+                                <th>Thrift Bal</th>
+                                <th>Proposed Dividend</th>
+                            </thead>
+                            <tbody id="dividend-table-body"></tbody>
+                        </table>
+                    </div>
+                    <button id="btn-post-dividends" class="btn btn-secondary margin-top" style="width: 100%; background-color: var(--success-color); color:#fff;">Distribute & Credit All Accounts</button>
+                </div>
+            </div>
+
+            <!-- Part C: Offline Data CSV Export Panel -->
+            <div class="card margin-top">
+                <h2>Local CSV Data Export</h2>
+                <p class="text-muted">Export data securely directly into Excel-compatible files on your phone storage.</p>
+                <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem;">
+                    <button id="export-members" class="btn btn-secondary">💾 Export Members Roster</button>
+                    <button id="export-loans" class="btn btn-secondary">💾 Export Active Loans</button>
+                    <button id="export-tx" class="btn btn-secondary">💾 Export Transaction Log</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 4: OFFLINE SYNC MONITOR -->
         <section id="tab-sync" class="tab-content" aria-labelledby="sync-heading">
             <div class="card">
                 <h2 id="sync-heading">Outbox / Cache Status</h2>
