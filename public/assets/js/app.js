@@ -1,6 +1,10 @@
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         await initDatabase();
+        // Hydrate data from the server if online, then render
+        if (navigator.onLine) {
+            await hydrateDatabaseFromServer();
+        }
         renderAllData();
     } catch (e) {
         console.error('Core Database initialization failed:', e);
@@ -41,6 +45,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             memberForm.reset();
             renderAllData();
+            if (navigator.onLine) syncLocalDataToCloud();
         });
     }
 
@@ -63,6 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             loanForm.reset();
             renderAllData();
+            if (navigator.onLine) syncLocalDataToCloud();
         });
     }
 
@@ -73,13 +79,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const targetLoanSelect = document.getElementById('tx-loan-id');
 
     if (txTypeSelect && txMemberSelect) {
-        // Show active loans dropdown ONLY when "Loan Repayment" is selected
-        txTypeSelect.addEventListener('change', () => {
-            updateTargetLoanDropdown();
-        });
-        txMemberSelect.addEventListener('change', () => {
-            updateTargetLoanDropdown();
-        });
+        txTypeSelect.addEventListener('change', updateTargetLoanDropdown);
+        txMemberSelect.addEventListener('change', updateTargetLoanDropdown);
     }
 
     async function updateTargetLoanDropdown() {
@@ -116,17 +117,133 @@ document.addEventListener('DOMContentLoaded', async () => {
                 timestamp: new Date().toISOString()
             };
 
-            // Post Locally & update related balances dynamically
             await saveTransactionLocal(transaction);
             await queueForSync('INSERT', 'transactions', transaction);
 
             txForm.reset();
             loanSelectWrapper.classList.add('hidden');
             renderAllData();
+            if (navigator.onLine) syncLocalDataToCloud();
         });
     }
 
-    // 6. Online Status Monitoring
+    // 6. Dividend Calculation & Post Engine
+    const dividendForm = document.getElementById('dividend-form');
+    let computedDividendsList = [];
+
+    if (dividendForm) {
+        dividendForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const rate = parseFloat(document.getElementById('div-rate').value) / 100;
+            const members = await getMembersLocal();
+            const tableBody = document.getElementById('dividend-table-body');
+            
+            tableBody.innerHTML = '';
+            computedDividendsList = [];
+
+            if (members.length === 0) {
+                alert("No members registered to calculate dividends.");
+                return;
+            }
+
+            members.forEach(m => {
+                const payout = parseFloat((m.thriftBalance * rate).toFixed(2));
+                computedDividendsList.push({
+                    memberId: m.memberId,
+                    name: m.name,
+                    thriftBalance: m.thriftBalance,
+                    dividendAmount: payout
+                });
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><strong>${escapeHTML(m.memberId)}</strong></td>
+                    <td>₹${m.thriftBalance.toLocaleString('en-IN')}</td>
+                    <td style="color:var(--success-color); font-weight:bold;">₹${payout.toLocaleString('en-IN')}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+
+            document.getElementById('dividend-results-wrapper').classList.remove('hidden');
+        });
+    }
+
+    const postDividendsBtn = document.getElementById('btn-post-dividends');
+    if (postDividendsBtn) {
+        postDividendsBtn.addEventListener('click', async () => {
+            if (computedDividendsList.length === 0) return;
+            
+            if (confirm(`Are you sure you want to distribute dividends to ${computedDividendsList.length} members?`)) {
+                for (const item of computedDividendsList) {
+                    const transaction = {
+                        txId: 'DIV-' + Date.now().toString().slice(-4) + '-' + Math.floor(Math.random() * 100),
+                        memberId: item.memberId,
+                        type: 'Thrift Deposit',
+                        loanId: null,
+                        amount: item.dividendAmount,
+                        timestamp: new Date().toISOString()
+                    };
+                    
+                    await saveTransactionLocal(transaction);
+                    await queueForSync('INSERT', 'transactions', transaction);
+                }
+
+                alert("Dividends distributed and logged successfully!");
+                document.getElementById('dividend-results-wrapper').classList.add('hidden');
+                if (dividendForm) dividendForm.reset();
+                renderAllData();
+                if (navigator.onLine) syncLocalDataToCloud();
+            }
+        });
+    }
+
+    // 7. CSV Reporting Export Mechanics
+    const setupExport = (buttonId, filename, dataFetcher, headers, mapper) => {
+        const btn = document.getElementById(buttonId);
+        if (btn) {
+            btn.addEventListener('click', async () => {
+                const data = await dataFetcher();
+                if (data.length === 0) {
+                    alert("No local records found to export.");
+                    return;
+                }
+
+                let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+                csvContent += headers.join(",") + "\n";
+
+                data.forEach(item => {
+                    const row = mapper(item);
+                    const快捷Row = row.map(v => `"${String(v).replace(/"/g, '""')}"`);
+                    csvContent +=快捷Row.join(",") + "\n";
+                });
+
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", filename);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            });
+        }
+    };
+
+    setupExport('export-members', 'BBM_ECCS_Members.csv', getMembersLocal, 
+        ['Member ID', 'Name', 'Thrift Balance (INR)'], 
+        m => [m.memberId, m.name, m.thriftBalance]
+    );
+
+    setupExport('export-loans', 'BBM_ECCS_Loans.csv', getLoansLocal, 
+        ['Loan ID', 'Member ID', 'Loan Type', 'Principal Remaining', 'Status'], 
+        l => [l.loanId, l.memberId, l.type, l.principal, l.status]
+    );
+
+    setupExport('export-tx', 'BBM_ECCS_Transactions.csv', getTransactionsLocal, 
+        ['Timestamp', 'Transaction ID', 'Member ID', 'Type', 'Amount (INR)', 'Loan Reference'], 
+        t => [t.timestamp, t.txId, t.memberId, t.type, t.amount, t.loanId || 'N/A']
+    );
+
+    // 8. Connection Status Handler
     const statusBanner = document.getElementById('network-status');
     function updateNetworkStatus() {
         if (!statusBanner) return;
@@ -153,13 +270,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
+// --- Server-to-Client Initial Seeding Engine ---
+async function hydrateDatabaseFromServer() {
+    try {
+        console.log("🔄 Fetching central cloud data partitions...");
+        const res = await fetch('/api/data');
+        if (!res.ok) return;
+        const cloudData = await res.json();
+
+        // Seed members
+        if (cloudData.members && cloudData.members.length > 0) {
+            for (const m of cloudData.members) await saveMemberLocal(m);
+        }
+        // Seed loans
+        if (cloudData.loans && cloudData.loans.length > 0) {
+            for (const l of cloudData.loans) await saveLoanLocal(l);
+        }
+        // Seed transactions
+        if (cloudData.transactions && cloudData.transactions.length > 0) {
+            for (const t of cloudData.transactions) await saveTransactionLocal(t);
+        }
+        console.log("✅ IndexedDB storage system fully hydrated with cloud state.");
+    } catch (err) {
+        console.error("⚠️ Failed to download server records during startup hydration:", err);
+    }
+}
+
 // --- Dynamic Render Pipelines ---
 async function renderAllData() {
     const members = await getMembersLocal();
     const loans = await getLoansLocal();
     const transactions = await getTransactionsLocal();
 
-    // A. Render Member Lists & Select Dropdowns
+    const sumThriftEl = document.getElementById('sum-thrift');
+    const sumLoansEl = document.getElementById('sum-loans');
+    if (sumThriftEl && sumLoansEl) {
+        const totalThrift = members.reduce((acc, curr) => acc + curr.thriftBalance, 0);
+        const totalOutstandingLoans = loans.reduce((acc, curr) => acc + (curr.principal || 0), 0);
+        sumThriftEl.textContent = `₹${totalThrift.toLocaleString('en-IN')}`;
+        sumLoansEl.textContent = `₹${totalOutstandingLoans.toLocaleString('en-IN')}`;
+    }
+
     const memberTableBody = document.getElementById('member-table-body');
     const loanMemberSelect = document.getElementById('l-member');
     const txMemberSelect = document.getElementById('tx-member');
@@ -192,7 +343,6 @@ async function renderAllData() {
         }
     }
 
-    // B. Render Loan Ledger
     const loanTableBody = document.getElementById('loan-table-body');
     if (loanTableBody) {
         loanTableBody.innerHTML = '';
@@ -202,7 +352,7 @@ async function renderAllData() {
             loans.forEach(l => {
                 const memberObj = members.find(m => m.memberId === l.memberId);
                 const memberName = memberObj ? memberObj.name : l.memberId;
-                const statusClass = l.status === 'Fully Repaid' ? 'status-pending' : ''; // Use existing styles or update
+                const statusClass = l.status === 'Fully Repaid' ? 'status-pending' : '';
 
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -217,15 +367,13 @@ async function renderAllData() {
         }
     }
 
-    // C. Render Transactions List
     const txTableBody = document.getElementById('tx-table-body');
     if (txTableBody) {
         txTableBody.innerHTML = '';
         if (transactions.length === 0) {
             txTableBody.innerHTML = `<tr><td colspan="4" class="text-muted" style="text-align:center;">No transactions logged yet.</td></tr>`;
         } else {
-            // Display most recent transactions at the top
-            transactions.reverse().slice(0, 15).forEach(t => {
+            transactions.slice().reverse().slice(0, 15).forEach(t => {
                 const memberObj = members.find(m => m.memberId === t.memberId);
                 const memberName = memberObj ? memberObj.name : t.memberId;
                 const dateStr = new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -277,10 +425,7 @@ async function checkSyncQueue() {
 }
 
 async function syncLocalDataToCloud() {
-    if (!navigator.onLine) {
-        alert("Cannot initiate synchronization. Device is still offline.");
-        return;
-    }
+    if (!navigator.onLine) return;
     if (typeof dbInstance === 'undefined' || !dbInstance) return;
 
     const tx = dbInstance.transaction('sync_queue', 'readonly');
@@ -291,17 +436,27 @@ async function syncLocalDataToCloud() {
         const queue = request.result;
         if (queue.length === 0) return;
 
-        console.log(`Found ${queue.length} items ready to write to server. Uploading in progress...`);
-        await new Promise(r => setTimeout(r, 1200));
-
-        const writeTx = dbInstance.transaction('sync_queue', 'readwrite');
-        const writeStore = writeTx.objectStore('sync_queue');
-        const clearRequest = writeStore.clear();
-
-        clearRequest.onsuccess = () => {
-            console.log('Outbox synchronization complete.');
-            renderAllData();
-        };
+        console.log(`📡 Sending ${queue.length} items to server...`);
+        try {
+            const response = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ queue })
+            });
+            if (response.ok) {
+                const result = await response.json();
+                console.log(`✅ Server successfully processed ${result.processed} items.`);
+                const writeTx = dbInstance.transaction('sync_queue', 'readwrite');
+                const writeStore = writeTx.writeStore ? writeTx.writeStore('sync_queue') : writeTx.objectStore('sync_queue');
+                const clearRequest = writeStore.clear();
+                clearRequest.onsuccess = () => {
+                    console.log('Outbox cleaned up.');
+                    renderAllData();
+                };
+            }
+        } catch (err) {
+            console.error('❌ Network failure during sync transfer:', err);
+        }
     };
 }
 

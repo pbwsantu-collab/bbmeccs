@@ -1,0 +1,13 @@
+{
+  "name": "bbm-eccs-portal",
+  "version": "1.0.0",
+  "description": "Full-stack Offline-First Credit Cooperative Portal",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}
