@@ -1,0 +1,24 @@
+{
+  "short_name": "BBM-ECCS",
+  "name": "BBM Employees Credit Cooperative Society",
+  "description": "Educational & Financial Management Portal",
+  "icons": [
+    {
+      "src": "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4da.png",
+      "type": "image/png",
+      "sizes": "72x72",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/512x512/1f4da.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/index.html",
+  "background_color": "#f7f9fc",
+  "theme_color": "#1a5f7a",
+  "display": "standalone",
+  "orientation": "portrait"
+}
