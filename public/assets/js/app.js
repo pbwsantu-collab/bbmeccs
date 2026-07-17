@@ -1,5 +1,4 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    // 1. Initialize DB Core
     try {
         await initDatabase();
         renderAllData();
@@ -7,14 +6,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error('Core Database initialization failed:', e);
     }
 
-    // 2. Mobile Tab Controller
+    // 1. Mobile Tab Controller
     const tabButtons = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
 
     tabButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             const targetId = btn.getAttribute('data-target');
-
             tabButtons.forEach(b => {
                 b.classList.remove('active');
                 b.setAttribute('aria-selected', 'false');
@@ -27,12 +25,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    // 3. Member Registration Submission Trapping
+    // 2. Add Member Form Submission
     const memberForm = document.getElementById('member-form');
     if (memberForm) {
         memberForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-
             const newMember = {
                 memberId: document.getElementById('m-id').value.trim(),
                 name: document.getElementById('m-name').value.trim(),
@@ -44,22 +41,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             memberForm.reset();
             renderAllData();
-            checkSyncQueue();
         });
     }
 
-    // 4. Loan Disbursement Submission Trapping
+    // 3. Disburse Loan Form Submission
     const loanForm = document.getElementById('loan-form');
     if (loanForm) {
         loanForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-
+            const loanId = 'LN-' + Date.now().toString().slice(-6);
             const newLoan = {
-                loanId: 'LN-' + Date.now(),
+                loanId: loanId,
                 memberId: document.getElementById('l-member').value,
                 type: document.getElementById('l-type').value,
                 principal: parseFloat(document.getElementById('l-principal').value) || 0,
-                status: 'Pending Sync'
+                status: 'Active'
             };
 
             await saveLoanLocal(newLoan);
@@ -67,20 +63,77 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             loanForm.reset();
             renderAllData();
-            checkSyncQueue();
         });
     }
 
-    // 5. Connection Detection Engine
+    // 4. Dynamic UI updates inside Ledger Transaction Form
+    const txTypeSelect = document.getElementById('tx-type');
+    const txMemberSelect = document.getElementById('tx-member');
+    const loanSelectWrapper = document.getElementById('loan-select-wrapper');
+    const targetLoanSelect = document.getElementById('tx-loan-id');
+
+    if (txTypeSelect && txMemberSelect) {
+        // Show active loans dropdown ONLY when "Loan Repayment" is selected
+        txTypeSelect.addEventListener('change', () => {
+            updateTargetLoanDropdown();
+        });
+        txMemberSelect.addEventListener('change', () => {
+            updateTargetLoanDropdown();
+        });
+    }
+
+    async function updateTargetLoanDropdown() {
+        if (txTypeSelect.value === 'Loan Repayment' && txMemberSelect.value) {
+            const loans = await getLoansLocal();
+            const activeMemberLoans = loans.filter(l => l.memberId === txMemberSelect.value && l.principal > 0);
+            
+            targetLoanSelect.innerHTML = '<option value="">-- Choose Active Loan --</option>';
+            activeMemberLoans.forEach(l => {
+                const opt = document.createElement('option');
+                opt.value = l.loanId;
+                opt.textContent = `${l.loanId} (${l.type} - Bal: ₹${l.principal})`;
+                targetLoanSelect.appendChild(opt);
+            });
+            loanSelectWrapper.classList.remove('hidden');
+            targetLoanSelect.setAttribute('required', 'true');
+        } else {
+            loanSelectWrapper.classList.add('hidden');
+            targetLoanSelect.removeAttribute('required');
+        }
+    }
+
+    // 5. Post General Ledger Transaction Form
+    const txForm = document.getElementById('tx-form');
+    if (txForm) {
+        txForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const transaction = {
+                txId: 'TX-' + Date.now().toString().slice(-6),
+                memberId: document.getElementById('tx-member').value,
+                type: document.getElementById('tx-type').value,
+                loanId: document.getElementById('tx-loan-id').value || null,
+                amount: parseFloat(document.getElementById('tx-amount').value) || 0,
+                timestamp: new Date().toISOString()
+            };
+
+            // Post Locally & update related balances dynamically
+            await saveTransactionLocal(transaction);
+            await queueForSync('INSERT', 'transactions', transaction);
+
+            txForm.reset();
+            loanSelectWrapper.classList.add('hidden');
+            renderAllData();
+        });
+    }
+
+    // 6. Online Status Monitoring
     const statusBanner = document.getElementById('network-status');
-    
     function updateNetworkStatus() {
         if (!statusBanner) return;
         if (navigator.onLine) {
-            statusBanner.textContent = "⚡ Connection Active. Processing Sync Queues...";
+            statusBanner.textContent = "⚡ Connection Active. Syncing Local Logs...";
             statusBanner.className = "status-bar online";
             statusBanner.classList.remove('hidden');
-            
             setTimeout(() => statusBanner.classList.add('hidden'), 3000);
             syncLocalDataToCloud();
         } else {
@@ -94,22 +147,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.addEventListener('offline', updateNetworkStatus);
     if (!navigator.onLine) updateNetworkStatus();
 
-    // 6. Hard-Sync Button Handler
     const syncBtn = document.getElementById('btn-force-sync');
     if (syncBtn) {
         syncBtn.addEventListener('click', syncLocalDataToCloud);
     }
 });
 
-// --- Dynamic Render Engine ---
+// --- Dynamic Render Pipelines ---
 async function renderAllData() {
-    const memberTableBody = document.getElementById('member-table-body');
-    const loanDropdown = document.getElementById('l-member');
+    const members = await getMembersLocal();
+    const loans = await getLoansLocal();
+    const transactions = await getTransactionsLocal();
 
-    if (memberTableBody && loanDropdown) {
-        const members = await getMembersLocal();
+    // A. Render Member Lists & Select Dropdowns
+    const memberTableBody = document.getElementById('member-table-body');
+    const loanMemberSelect = document.getElementById('l-member');
+    const txMemberSelect = document.getElementById('tx-member');
+
+    if (memberTableBody) {
         memberTableBody.innerHTML = '';
-        loanDropdown.innerHTML = '<option value="">-- Choose Member --</option>';
+        if (loanMemberSelect) loanMemberSelect.innerHTML = '<option value="">-- Choose Member --</option>';
+        if (txMemberSelect) txMemberSelect.innerHTML = '<option value="">-- Choose Member --</option>';
 
         if (members.length === 0) {
             memberTableBody.innerHTML = `<tr><td colspan="3" class="text-muted" style="text-align:center;">No members registered yet.</td></tr>`;
@@ -123,31 +181,63 @@ async function renderAllData() {
                 `;
                 memberTableBody.appendChild(row);
 
-                const option = document.createElement('option');
-                option.value = m.memberId;
-                option.textContent = `${m.name} (${m.memberId})`;
-                loanDropdown.appendChild(option);
+                const opt1 = document.createElement('option');
+                opt1.value = m.memberId;
+                opt1.textContent = `${m.name} (${m.memberId})`;
+                if (loanMemberSelect) loanMemberSelect.appendChild(opt1);
+
+                const opt2 = opt1.cloneNode(true);
+                if (txMemberSelect) txMemberSelect.appendChild(opt2);
             });
         }
     }
 
+    // B. Render Loan Ledger
     const loanTableBody = document.getElementById('loan-table-body');
     if (loanTableBody) {
-        const loans = await getLoansLocal();
         loanTableBody.innerHTML = '';
-
         if (loans.length === 0) {
-            loanTableBody.innerHTML = `<tr><td colspan="4" class="text-muted" style="text-align:center;">No active loans on record.</td></tr>`;
+            loanTableBody.innerHTML = `<tr><td colspan="5" class="text-muted" style="text-align:center;">No active loans on record.</td></tr>`;
         } else {
             loans.forEach(l => {
+                const memberObj = members.find(m => m.memberId === l.memberId);
+                const memberName = memberObj ? memberObj.name : l.memberId;
+                const statusClass = l.status === 'Fully Repaid' ? 'status-pending' : ''; // Use existing styles or update
+
                 const row = document.createElement('tr');
                 row.innerHTML = `
-                    <td>${escapeHTML(l.memberId)}</td>
+                    <td><strong>${escapeHTML(l.loanId)}</strong></td>
+                    <td>${escapeHTML(memberName)}</td>
                     <td>${escapeHTML(l.type)}</td>
                     <td>₹${l.principal.toLocaleString('en-IN')}</td>
-                    <td><span class="status-badge status-pending">${escapeHTML(l.status)}</span></td>
+                    <td><span class="status-badge status-pending ${statusClass}">${escapeHTML(l.status)}</span></td>
                 `;
                 loanTableBody.appendChild(row);
+            });
+        }
+    }
+
+    // C. Render Transactions List
+    const txTableBody = document.getElementById('tx-table-body');
+    if (txTableBody) {
+        txTableBody.innerHTML = '';
+        if (transactions.length === 0) {
+            txTableBody.innerHTML = `<tr><td colspan="4" class="text-muted" style="text-align:center;">No transactions logged yet.</td></tr>`;
+        } else {
+            // Display most recent transactions at the top
+            transactions.reverse().slice(0, 15).forEach(t => {
+                const memberObj = members.find(m => m.memberId === t.memberId);
+                const memberName = memberObj ? memberObj.name : t.memberId;
+                const dateStr = new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${dateStr}</td>
+                    <td>${escapeHTML(memberName)}</td>
+                    <td><span class="text-muted">${escapeHTML(t.type)}</span></td>
+                    <td><strong>₹${t.amount.toLocaleString('en-IN')}</strong></td>
+                `;
+                txTableBody.appendChild(row);
             });
         }
     }
@@ -155,7 +245,6 @@ async function renderAllData() {
     checkSyncQueue();
 }
 
-// Update the Badge count on Tab 3
 async function checkSyncQueue() {
     if (typeof dbInstance === 'undefined' || !dbInstance) return;
     const tx = dbInstance.transaction('sync_queue', 'readonly');
@@ -170,15 +259,14 @@ async function checkSyncQueue() {
         const syncList = document.getElementById('sync-list');
         if (syncList) {
             syncList.innerHTML = '';
-
             if (queue.length === 0) {
-                syncList.innerHTML = `<p class="text-muted" style="text-align:center;">Outbox is clean. All local modifications synced!</p>`;
+                syncList.innerHTML = `<p class="text-muted" style="text-align:center;">Outbox is clean. All modifications synchronized!</p>`;
             } else {
                 queue.forEach(item => {
                     const itemDiv = document.createElement('div');
                     itemDiv.className = 'sync-queue-item';
                     itemDiv.innerHTML = `
-                        <strong>${item.action}</strong>: ${item.table} (${item.payload.memberId || item.payload.loanId})
+                        <strong>${item.action}</strong>: ${item.table} (${item.payload.memberId || item.payload.loanId || item.payload.txId})
                         <span class="text-muted" style="font-size:0.75rem; display:block;">Queued: ${new Date(item.timestamp).toLocaleTimeString()}</span>
                     `;
                     syncList.appendChild(itemDiv);
@@ -188,7 +276,6 @@ async function checkSyncQueue() {
     };
 }
 
-// Emulated Cloud Sync Pipeline
 async function syncLocalDataToCloud() {
     if (!navigator.onLine) {
         alert("Cannot initiate synchronization. Device is still offline.");
