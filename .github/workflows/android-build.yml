@@ -12,19 +12,31 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
 
+    - name: Setup Java JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
 
-    - name: Install Bubblewrap
+    - name: Install Bubblewrap CLI
       run: npm install -g @bubblewrap/cli
 
-    - name: Build Android PWA Assets
+    - name: Compile Production Android PWA APK
       run: |
-        echo "Simulating APK generation boundaries for PWA web manifest..."
+        # Initialize Bubblewrap using your public app url and manifest mapping
+        bubblewrap init --manifest="https://solid-journey-5vvrr756g46r3p7r7-3000.app.github.dev/manifest.json" --meta=twa-manifest.json --yes
+        
+        # Build the actual installable Android package
+        bubblewrap build --yes
+        
+        # Move the newly generated real apk to an output directory
         mkdir -p build-output
-        echo "APK build asset storage initialized." > build-output/app-release.apk
+        mv *.apk build-output/ 2>/dev/null || cp app-release-signed.apk build-output/app-release.apk
 
     - name: Upload Finished APK
       uses: actions/upload-artifact@v4
